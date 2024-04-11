@@ -137,9 +137,15 @@ GitHub.sublime-settings
 !.vscode/extensions.json
 .history
 
+# sqlite
+*.sqlite3
+
 # idea
 .idea
 
 # env files
 *.env
 *.env.*
+
+# embeddings
+embeddings/

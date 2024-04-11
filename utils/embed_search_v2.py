@@ -1,5 +1,6 @@
 import ast
 import re
+import os
 from typing import List
 
 import pandas as pd
@@ -9,11 +10,12 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from scipy import spatial
 
-from client import client
+from .client import client
 
 GPT_MODEL = "gpt-3.5-turbo"
 EMBEDDING_MODEL = "text-embedding-3-small"
 BATCH_SIZE = 1000  # you can submit up to 2048 embedding inputs per request
+MAX_TOKENS = 1600  # maximum number of tokens per input
 
 SECTIONS_TO_IGNORE = [
     "See also",
@@ -34,7 +36,7 @@ SECTIONS_TO_IGNORE = [
     "Notes",
     "References and sources",
     "References and notes"
-]
+]  # These are common sections that are often not useful for answering questions. This list can be expanded/modified.
 
 
 def sections_from_page(
@@ -53,6 +55,7 @@ def sections_from_page(
     sections_inner = []
 
     headings = page.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+
     for heading in headings:
         if heading.name == "h1":
             parent_titles = [heading.text.strip()]
@@ -70,6 +73,14 @@ def sections_from_page(
             text += sibling.text.strip() + " "
             sibling = sibling.find_next_sibling()
         sections_inner.append((parent_titles, text.strip()))
+
+    # special case where there are no headings
+    # -> uses the entire page as a single section (paragraphs, spans, etc.)
+    if not sections_inner:
+        text = ""
+        for child in page.children:
+            text += child.text.strip() + " "
+        sections_inner.append(([page.title.text.strip()], text.strip()))
 
     return sections_inner
 
@@ -146,12 +157,15 @@ def split_strings_from_subsection(
     titles, text = subsection
     s = "\n\n".join(titles + [text])
     num_tokens_in_string = num_tokens(s)
+
     # if length is fine, return string
     if num_tokens_in_string <= max_tokens:
         return [s]
+
     # if recursion hasn't found a split after X iterations, just truncate
     elif max_recursion == 0:
         return [truncated_string(s, model=model, max_tokens=max_tokens)]
+
     # otherwise, split in half and recurse
     else:
         titles, text = subsection
@@ -173,8 +187,36 @@ def split_strings_from_subsection(
                     )
                     results.extend(half_strings)
                 return results
+
     # otherwise, no split was found, so just truncate (should be very rare)
     return [truncated_string(s, model=model, max_tokens=max_tokens)]
+
+
+def validate_website(site: str) -> bool:
+    """
+    Validate a website.
+    This function should check if the website is valid.
+    For now, return True if the website is not empty.
+    """
+    return bool(site)
+
+
+def strip_website(site):
+    """
+    This function strips the website to remove any unnecessary characters.
+    :param site:
+    :return:
+    """
+    if not site:
+        raise ValueError("Please provide a website to scrape.")
+    site = site.strip()
+    if site.startswith("http://"):
+        site = site.replace("http://", "")
+    if site.startswith("https://"):
+        site = site.replace("https://", "")
+    if site.endswith("/"):
+        site = site[:-1]
+    return site
 
 
 def fetch_html_from_url(url: str) -> str:
@@ -203,7 +245,7 @@ def embed_text(strings: list[str], client: OpenAI = None) -> list[list[float]]:
     for batch_start in range(0, len(strings), BATCH_SIZE):
         batch_end = batch_start + BATCH_SIZE
         batch = strings[batch_start:batch_end]
-        print(f"Batch {batch_start} to {batch_end-1}")
+        print(f"Batch {batch_start} to {batch_end - 1}")
         response = client.embeddings.create(model=EMBEDDING_MODEL, input=batch)
         for i, be in enumerate(response.data):
             assert i == be.index  # double check embeddings are in the same order as input
@@ -215,7 +257,6 @@ def embed_text(strings: list[str], client: OpenAI = None) -> list[list[float]]:
 
 def tokenize(sections: list[tuple[list[str], str]]) -> List[str]:
     # split sections into chunks
-    MAX_TOKENS = 1600
     page_strings = []
     for section in sections:
         section = clean_section(section)
@@ -228,19 +269,27 @@ def tokenize(sections: list[tuple[list[str], str]]) -> List[str]:
 def generate_embeddings_and_save(site: str, strings=None):
     if strings is None:
         strings = []
-    from client import client
     embeddings = embed_text(strings, client=client)
     df = pd.DataFrame({"text": strings, "embedding": embeddings})
-    print(df)
+
+    # create embeddings directory if it doesn't exist
+    os.makedirs("embeddings", exist_ok=True)
 
     # save to CSV
-    save_path = site + "_embeddings.csv"
+    save_path = "embeddings/" + strip_website(site) + "_embeddings.csv"
     df.to_csv(save_path, index=False)
+    print(f"Embeddings saved to {save_path}")
+
+    return df
 
 
 # ACTUAL TEXT SEARCH
 def prepare_data(site: str):
-    # site is the name of the website, without the .com or .co.ke, and without the www. or https://
+    """
+    This function reads the embeddings from the file system and returns a dataframe
+    :param site: name of the website, without the .com or .co.ke, and without the www. or https://
+    :return:
+    """
     df = pd.read_csv('../embeddings/' + site + "_embeddings.csv")
     return df
 
@@ -300,9 +349,11 @@ def ask(
         print_message: bool = False,
 ) -> str:
     """Answers a query using GPT and a dataframe of relevant texts and embeddings."""
+    # print(query, df, model, token_budget, print_message)
     message = query_message(query, df, model=model, token_budget=token_budget)
     if print_message:
-        print(message)
+        # print(message)
+        pass
     messages = [
         {"role": "system", "content": "You answer questions about any website, provided information about it."},
         {"role": "user", "content": message},
@@ -316,27 +367,33 @@ def ask(
     return response_message
 
 
-
 if __name__ == "__main__":
-    # url = "https://murageh.co.ke"
+    """
+    Basically, this is how you would use the functions in this file.
+    """
+    # url = "https://crispice.murageh.co.ke"
     # html = fetch_html_from_url(url)
     # page = BeautifulSoup(html, 'html.parser')
     # sections = sections_from_page(page)
     # strings = tokenize(sections)
-    # generate_embeddings("murageh.co.ke", strings)
+    # generate_embeddings_and_save("murageh.co.ke", strings)
+
+    # -----------------------
 
     # prepare_data("murageh.co.ke")
-    df = prepare_data("murageh.co.ke")
-    # convert embeddings from CSV str type back to list type
-    df['embedding'] = df['embedding'].apply(ast.literal_eval)
-    # print(df)
+    # df = prepare_data("murageh.co.ke")
+    # # convert embeddings from CSV str type back to list type
+    # df['embedding'] = df['embedding'].apply(ast.literal_eval)
+    # # print(df)
+    #
+    # query = "is there an email available to reach the website's owner?"
+    # res = ask(
+    #     query=query,
+    #     df=df,
+    #     model=GPT_MODEL,
+    #     token_budget=4096 - 500,
+    #     print_message=True,
+    # )
+    # print(res)
 
-    query = "is there an email available to reach the website's owner?"
-    res = ask(
-        query=query,
-        df=df,
-        model=GPT_MODEL,
-        token_budget=4096 - 500,
-        print_message=True,
-    )
-    print(res)
+    pass

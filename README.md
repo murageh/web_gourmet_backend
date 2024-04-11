@@ -21,8 +21,10 @@ After installing the dependencies, you can run the application using the followi
 ```bash
 python manage.py runserver
 ```
-The application will be accessible at http://
-localhost:8000.
+The application will be accessible at http:// localhost:8000.
+
+Proceed to then start the frontend, which will be accessible in the root project. More instructions on how to run it 
+are available on the project's `README.md` file.
 
 ## Usage
 To use the application, you can input a website URL in the input field on the homepage. You can then proceed to ask any
