@@ -20,6 +20,6 @@ from . import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("", views.index, name="index"),
-    path("submit_website", views.submit_website, name="submit_website"),
-    path("ask_question", views.ask_question, name="ask_question"),
+    path("api/submit_url", views.submit_url, name="submit_url"),
+    path("api/ask_question", views.ask_question, name="ask_question"),
 ]

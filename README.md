@@ -1,8 +1,9 @@
-# Web Gourmet
+# Web Gourmet - Backend
 
 ## Description
 Web Gourmet is a web application that allows users to input a website URL, then proceed to ask any questions they may 
-have about the website. The application will then provide a response to the user's question. The application is built
+have about the website. 
+The application will then provide a response to the user's question. The application is built
 using the Django framework and the Python programming language. 
 The application uses the BeautifulSoup library to scrape the website and extract the information needed to answer 
 the user's question. The application leverages the power of AI for the question-answering functionality. 

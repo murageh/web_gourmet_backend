@@ -1,13 +1,11 @@
 import ast
-import json
 import os
 
 import pandas as pd
 from bs4 import BeautifulSoup
-from django.http import HttpResponse
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.csrf import csrf_protect
+
 from utils.embed_search_v2 import validate_website, strip_website, fetch_html_from_url, generate_embeddings_and_save, \
     ask, sections_from_page, tokenize
 
@@ -74,7 +72,7 @@ def index(request):
 
 
 @csrf_exempt
-def submit_website(request):
+def submit_url(request):
     """
     This function is called when a user submits a website to be scraped.
     This will invoke the scraper, and generate the embeddings for the website content
@@ -88,32 +86,37 @@ def submit_website(request):
         return JsonResponse(UserResponse(404, f"Cannot ${request.method} to this path").to_json(), status=404)
 
     # fetch the website from the request
-    site = request.POST.get('site')
-    if not site:
+    url = request.POST.get('url')
+    if not url:
         return JsonResponse(UserResponse(400, "Please specify a website.").to_json(), status=400)
 
     # validate the website
-    valid = validate_website(site)
+    valid = validate_website(url)
     if not valid:
         return JsonResponse(UserResponse(400, "Invalid website.").to_json(), status=400)
 
     # invoke the scraper
-    html_content = fetch_html_from_url(site)
+    html_content = fetch_html_from_url(url)
     if not html_content:
-        return JsonResponse(UserResponse(500, "Failed to fetch the website content.").to_json(), status=500)
+        return JsonResponse(UserResponse(
+            500,
+            "Failed to fetch the website content. Make sure you input the entire "
+            "website. Including \"https://\"").to_json(),
+                            status=500,
+                            )
 
     # generate embeddings
     try:
         page = BeautifulSoup(html_content, 'html.parser')
         sections = sections_from_page(page)
         strings = tokenize(sections)
-        embeddings = generate_embeddings_and_save(site, strings)
+        embeddings = generate_embeddings_and_save(url, strings)
     except Exception as e:
         print(e)
         return JsonResponse(UserResponse(500, "Failed to generate embeddings for the website.").to_json(), status=500)
 
     # store website
-    store_website(strip_website(site), embeddings)
+    store_website(strip_website(url), embeddings)
 
     # return success message
     return JsonResponse(UserResponse(200, "Website submitted successfully.").to_json())
@@ -135,9 +138,9 @@ def ask_question(request):
         return JsonResponse(UserResponse(404, f"Cannot ${request.method} to this path").to_json(), status=404)
 
     # fetch the website from the request
-    site = request.POST.get('site')
-    site = strip_website(site)
-    if not site:
+    url = request.POST.get('url')
+    url = strip_website(url)
+    if not url:
         return JsonResponse(UserResponse(400, "Please specify a website.").to_json(), status=400)
 
     # fetch the question from the request
@@ -147,7 +150,7 @@ def ask_question(request):
 
     # fetch embeddings for the site
     try:
-        df = websites[site]['embeddings']
+        df = websites[url]['embeddings']
     except KeyError:
         return JsonResponse(UserResponse(400, "Website not found.").to_json(), status=400)
     except Exception as e:
