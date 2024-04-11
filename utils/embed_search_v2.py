@@ -201,7 +201,7 @@ def validate_website(site: str) -> bool:
     return bool(site)
 
 
-def strip_website(site):
+def strip_website(site: str):
     """
     This function strips the website to remove any unnecessary characters.
     :param site:
@@ -216,6 +216,7 @@ def strip_website(site):
         site = site.replace("https://", "")
     if site.endswith("/"):
         site = site[:-1]
+    site = site.replace('/', '_')
     return site
 
 
@@ -273,7 +274,7 @@ def generate_embeddings_and_save(site: str, strings=None):
     df = pd.DataFrame({"text": strings, "embedding": embeddings})
 
     # create embeddings directory if it doesn't exist
-    os.makedirs("embeddings", exist_ok=True)
+    os.makedirs(f"embeddings/", exist_ok=True)
 
     # save to CSV
     save_path = "embeddings/" + strip_website(site) + "_embeddings.csv"
