@@ -81,7 +81,7 @@ def clean_section(section: tuple[list[str], str]) -> tuple[list[str], str]:
     Remove newlines and extra spaces.
     """
     parent_titles, text = section
-    cleaned_text = text.strip()
+    text.strip()
     cleaned_text = re.sub(r"\[\d+]", "", text)
     cleaned_text = re.sub(r"\s+", " ", cleaned_text)
     cleaned_text = re.sub(r"\n*", " ", cleaned_text)
@@ -225,7 +225,7 @@ def tokenize(sections: list[tuple[list[str], str]]) -> List[str]:
     return page_strings
 
 
-def generate_embeddings(site: str, strings=None):
+def generate_embeddings_and_save(site: str, strings=None):
     if strings is None:
         strings = []
     from client import client
@@ -241,7 +241,7 @@ def generate_embeddings(site: str, strings=None):
 # ACTUAL TEXT SEARCH
 def prepare_data(site: str):
     # site is the name of the website, without the .com or .co.ke, and without the www. or https://
-    df = pd.read_csv('./' + site + "_embeddings.csv")
+    df = pd.read_csv('../embeddings/' + site + "_embeddings.csv")
     return df
 
 
