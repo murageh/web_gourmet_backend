@@ -10,7 +10,7 @@ GPT_MODEL = "gpt-3.5-turbo"
 load_dotenv()
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
 
-with open('../examples/openai.html', 'r') as file:
+with open('../../examples/openai.html', 'r') as file:
     web_content = file.read()
 
 

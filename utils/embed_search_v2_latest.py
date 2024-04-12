@@ -9,12 +9,9 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from scipy import spatial
 
-from .client import client
-
-GPT_MODEL = "gpt-3.5-turbo"
-EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 1000  # you can submit up to 2048 embedding inputs per request
-MAX_TOKENS = 1600  # maximum number of tokens per input
+from utils.app_logger import logger
+from utils.client import client as openai_client
+from utils.configs import GPT_MODEL, EMBEDDING_MODEL, BATCH_SIZE, MAX_TOKENS
 
 SECTIONS_TO_IGNORE = [
     "See also",
@@ -43,12 +40,16 @@ def sections_from_page(
         sections_to_ignore=None,
 ) -> list[tuple[list[str], str]]:
     """
-    From any page, return a flattened list of all nested subsections.
-    *WE ARE USING BS4*
-    Each subsection is a tuple, where:
-        - the first element is a list of parent subtitles, starting with the page title
-        - the second element is the text of the subsection (but not any children)
-    """
+     Extracts nested subsections from a web page using BeautifulSoup.
+
+     Args:
+         page: BeautifulSoup object representing the parsed HTML content.
+         sections_to_ignore (list, optional): List of section titles to exclude. Defaults to None.
+
+     Returns:
+         List[Tuple[List[str], str]]: A list of tuples where each tuple represents a subsection.
+             The first element is a list of parent section titles, and the second element is the text content.
+     """
     if sections_to_ignore is None:
         sections_to_ignore = SECTIONS_TO_IGNORE
     sections_inner = []
@@ -85,10 +86,15 @@ def sections_from_page(
 
 
 def clean_section(section: tuple[list[str], str]) -> tuple[list[str], str]:
-    """
-    Clean a section's text.
-    Removes any text in square brackets, which are often citations.
-    Remove newlines and extra spaces.
+    """"
+    Cleans a section's text by removing bracketed citations and extra whitespace.
+
+    Args:
+        section (Tuple[List[str], str]): Tuple representing a subsection.
+            The first element is a list of parent section titles, and the second element is the text content.
+
+    Returns:
+        Tuple[List[str], str]: The cleaned subsection with citations removed and whitespace trimmed.
     """
     parent_titles, text = section
     text.strip()
@@ -197,7 +203,14 @@ def validate_website(site: str) -> bool:
     This function should check if the website is valid.
     For now, return True if the website is not empty.
     TODO: Update this function to validate the website.
+    sth like
+    ```python
+        url_pattern = r"^https?://[\w\-\.]+\.[a-z]{2,}$"
+        return bool(re.match(url_pattern, site))
+    ```
     """
+    if not site:
+        return False
     return bool(site)
 
 
@@ -221,13 +234,21 @@ def strip_website(site: str):
 
 
 def fetch_html_from_url(url: str) -> str:
-    """Fetch HTML content from a URL."""
+    """
+    Fetches HTML content from a URL with error handling.
+
+    Args:
+        url (str): The URL to fetch.
+
+    Returns:
+        str: The fetched HTML content or an empty string if an error occurs.
+    """
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise an exception for non-2xx status codes
         return response.text
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching URL: {e}")
+        logger.error(f"Error fetching URL: {e}")
         return ""
 
 
@@ -241,12 +262,23 @@ def fetch_html_from_file(file_path: str) -> str:
         return ""
 
 
-def embed_text(strings: list[str], client: OpenAI = None) -> list[list[float]]:
+def embed_text(strings: list[str], client: OpenAI = None, batch_size=BATCH_SIZE) -> list[list[float]]:
+    """
+    Embeds a list of text strings using OpenAI's API with batching and logging.
+
+    Args:
+        strings (List[str]): The list of text strings to embed.
+        client (OpenAI, optional): The OpenAI client object. Defaults to None.
+        batch_size (int, optional): The batch size for sending requests to the API. Defaults to 1000.
+
+    Returns:
+        List[List[float]]: A list of lists containing the embeddings for each text string.
+    """
     embeddings = []
-    for batch_start in range(0, len(strings), BATCH_SIZE):
-        batch_end = batch_start + BATCH_SIZE
+    for batch_start in range(0, len(strings), batch_size):
+        batch_end = batch_start + batch_size
         batch = strings[batch_start:batch_end]
-        print(f"Batch {batch_start} to {batch_end - 1}")
+        logger.info(f"Batch {batch_start} to {batch_end - 1}")
         response = client.embeddings.create(model=EMBEDDING_MODEL, input=batch)
         for i, be in enumerate(response.data):
             assert i == be.index  # double check embeddings are in the same order as input
@@ -267,23 +299,38 @@ def tokenize(sections: list[tuple[list[str], str]]) -> List[str]:
     return page_strings
 
 
-def get_iso_datestr():
-    """Return the current date in ISO format."""
+def get_current_date_str():
+    """
+    Return the current date in ISO format. (YYYY-MM-DDTHH:MM:SS...)
+    """
     from datetime import datetime
     return datetime.now().isoformat()
 
 
 def append_date_to_filename(filename: str):
-    """Append the current date to a filename."""
-    datestr = get_iso_datestr()
+    """
+    Appends the current date in ISO format to a filename.
+
+    Args:
+        filename (str): The original filename.
+
+    Returns:
+        str: The filename with the date appended, separated by '__'.
+    """
+    datestr = get_current_date_str()
     base, ext = os.path.splitext(filename)
     return f"{base}__{datestr}{ext}"
 
 
 def strip_date_from_filename(filename: str):
     """
-    Strip the date from a filename.
-    The date should be in ISO format, separated by '__'.
+    Removes the date portion from a filename, assuming it's in ISO format and separated by '__'.
+
+    Args:
+        filename (str): The filename with potentially a date appended.
+
+    Returns:
+        str: The filename without the date.
     """
     parts = filename.split("__")
     if len(parts) > 1:
@@ -323,7 +370,7 @@ def is_data_stale(filename: str, days: int = 7):
 def generate_embeddings_and_save(site: str, strings=None):
     if strings is None:
         strings = []
-    embeddings = embed_text(strings, client=client)
+    embeddings = embed_text(strings, client=openai_client)
     df = pd.DataFrame({"text": strings, "embedding": embeddings})
 
     # create embeddings directory if it doesn't exist
@@ -358,21 +405,28 @@ def strings_ranked_by_relatedness(
         df: pd.DataFrame,
         relatedness_fn=lambda x, y: 1 - spatial.distance.cosine(x, y),
         top_n: int = 100,
-        client: OpenAI = client,
+        client: OpenAI = openai_client,
 ) -> tuple[list[str], list[float]]:
-    """Returns a list of strings and relatednesses, sorted from most related to least."""
-    query_embedding_response = client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=query,
-    )
+    """
+    Ranks strings by their relatedness to a query using cosine similarity.
+
+    Args:
+        query (str): The query string.
+        df (pd.DataFrame): Dataframe containing text and embedding columns.
+        relatedness_fn (function, optional): Function to calculate relatedness. Defaults to cosine similarity.
+        top_n (int, optional): The number of top-ranked strings to return. Defaults to 100.
+
+    Returns:
+        List[Tuple[str, float]]: A list of tuples containing the ranked strings and their relatedness scores.
+    """
+    query_embedding_response = client.embeddings.create(model=EMBEDDING_MODEL, input=query)
     query_embedding = query_embedding_response.data[0].embedding
     strings_and_relatednesses = [
-        (row["text"], relatedness_fn(query_embedding, row["embedding"]))
-        for i, row in df.iterrows()
+        (row["text"], relatedness_fn(query_embedding, row["embedding"])) for i, row in df.iterrows()
     ]
     strings_and_relatednesses.sort(key=lambda x: x[1], reverse=True)
-    strings, relatednesses = zip(*strings_and_relatednesses)
-    return strings[:top_n], relatednesses[:top_n]
+    top_n_strings_and_relatednesses = strings_and_relatednesses[:top_n]
+    return zip(*top_n_strings_and_relatednesses)
 
 
 def query_message(
@@ -381,10 +435,23 @@ def query_message(
         model: str,
         token_budget: int
 ) -> str:
-    """Return a message for GPT, with relevant source texts pulled from a dataframe."""
+    """
+    Creates a message for GPT with relevant source texts, considering token budget.
+
+    Args:
+        query (str): The query string.
+        df (pd.DataFrame): Dataframe containing text and embedding columns.
+        model (str): The GPT model identifier.
+        token_budget (int): The maximum number of tokens allowed for the message.
+
+    Returns:
+        str: The formatted message for GPT.
+    """
     strings, relatednesses = strings_ranked_by_relatedness(query, df)
-    introduction = ('Use the below information extracted from a website to answer the subsequent question. If the '
-                    'answer cannot be found in the sections, write "I could not find an answer."')
+    introduction = (
+        'Use the below information extracted from a website to answer the subsequent question. If the '
+        'answer cannot be found in the sections, write "I could not find an answer."'
+    )
     question = f"\n\nQuestion: {query}"
     message = introduction
     for string in strings:
@@ -407,16 +474,14 @@ def ask(
         print_message: bool = False,
 ) -> str:
     """Answers a query using GPT and a dataframe of relevant texts and embeddings."""
-    # print(query, df, model, token_budget, print_message)
     message = query_message(query, df, model=model, token_budget=token_budget)
     if print_message:
-        # print(message)
         pass
     messages = [
         {"role": "system", "content": "You answer questions about any website, provided information about it."},
         {"role": "user", "content": message},
     ]
-    response = client.chat.completions.create(
+    response = openai_client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0
