@@ -6,7 +6,8 @@ from bs4 import BeautifulSoup
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from utils.embed_search_v2_latest import validate_website, strip_website, fetch_html_from_url, generate_embeddings_and_save, \
+from utils.embed_search_v2_latest import validate_website, strip_website, fetch_html_from_url, \
+    generate_embeddings_and_save, \
     ask, sections_from_page, tokenize, is_data_stale, strip_date_from_filename
 
 websites = {}  # dictionary to store the websites. once a user submits a website, the website is stored here.
@@ -22,6 +23,7 @@ def store_website(site, embeddings):
     """
     try:
         stale = is_data_stale(site)
+        print(f"is {site} stale? {stale}")
     except Exception as e:
         print("Failed to check if the data is stale", e)
         return
@@ -45,7 +47,7 @@ def load_previous_embeddings(specific: str = None):
     path = 'embeddings'
 
     for file in os.listdir(path):
-        if specific and specific not in file:
+        if specific and specific != strip_date_from_filename(file):
             continue
         if file.endswith(".csv"):
             df = pd.read_csv(os.path.join(path, file))
@@ -61,7 +63,8 @@ def print_loaded_embeddings():
 
 # load the previous embeddings
 load_previous_embeddings()
-print_loaded_embeddings()
+print('loaded websites:', len(websites))
+# print_loaded_embeddings()
 
 
 class UserResponse:
@@ -140,7 +143,8 @@ def submit_url(request):
         return JsonResponse(UserResponse(500, "Failed to generate embeddings for the website.").to_json(), status=500)
 
     # update website store
-    load_previous_embeddings(specific=save_path)
+    load_previous_embeddings(specific=url)
+    print_loaded_embeddings()
 
     # return success message
     return JsonResponse(UserResponse(200, "Website submitted successfully.").to_json())

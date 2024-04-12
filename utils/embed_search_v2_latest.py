@@ -313,7 +313,6 @@ def is_data_stale(filename: str, days: int = 7):
     :param filename: The filename to check. Should have a date in ISO format at the end, separated by '__'.
     :param days: The number of days after which the data is considered stale. Default is 7 days.
     """
-    print("Checking if data is stale...", filename)
     date1 = get_date_from_filename(filename)
     from datetime import datetime
     date2 = datetime.now()
