@@ -38,6 +38,8 @@ def load_previous_embeddings(specific_website: str = None):
     Loads previously generated website embeddings from the 'embeddings' directory.
     """
     path = 'embeddings'
+    if not os.path.exists(path):
+        return
     for filename in os.listdir(path):
         if filename.endswith(".csv") and (
                 not specific_website or specific_website == strip_date_from_filename(filename)):

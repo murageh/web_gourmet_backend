@@ -7,3 +7,4 @@ requests~=2.31.0
 tiktoken~=0.6.0
 scipy~=1.13.0
 Django~=5.0.4
+django-cors-headers
