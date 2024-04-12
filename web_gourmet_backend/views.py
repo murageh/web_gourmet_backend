@@ -6,8 +6,8 @@ from bs4 import BeautifulSoup
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from utils.embed_search_v2 import validate_website, strip_website, fetch_html_from_url, generate_embeddings_and_save, \
-    ask, sections_from_page, tokenize
+from utils.embed_search_v2_latest import validate_website, strip_website, fetch_html_from_url, generate_embeddings_and_save, \
+    ask, sections_from_page, tokenize, is_data_stale, strip_date_from_filename
 
 websites = {}  # dictionary to store the websites. once a user submits a website, the website is stored here.
 
@@ -15,17 +15,27 @@ websites = {}  # dictionary to store the websites. once a user submits a website
 def store_website(site, embeddings):
     """
     This function stores the website in the website dictionary
-    :param site:
+    :param site: Website name. It has the date appended to it after the '__'.
+                This is used to determine if the embeddings need to be updated
     :param embeddings:
     :return:
     """
+    try:
+        stale = is_data_stale(site)
+    except Exception as e:
+        print("Failed to check if the data is stale", e)
+        return
+
+    site = strip_date_from_filename(site)
+
     websites[site] = {
-        'embeddings': embeddings
+        'embeddings': embeddings,
+        'stale': stale,
     }
 
 
 # on startup, load previous embeddings
-def load_previous_embeddings():
+def load_previous_embeddings(specific: str = None):
     """
     This function loads the previous embeddings from the file tree.
     Load the embeddings directory and load the embeddings for each website.
@@ -33,22 +43,25 @@ def load_previous_embeddings():
     :return:
     """
     path = 'embeddings'
+
     for file in os.listdir(path):
+        if specific and specific not in file:
+            continue
         if file.endswith(".csv"):
-            website_id = file.split('_')[0]
             df = pd.read_csv(os.path.join(path, file))
             df['embedding'] = df['embedding'].apply(ast.literal_eval)
-            store_website(website_id, df)
+            store_website(file, df)
 
 
 def print_loaded_embeddings():
     print('websites:', len(websites))
     for key, value in websites.items():
-        print(key, '->', value)
+        print(key, '->', 'value')
 
 
 # load the previous embeddings
 load_previous_embeddings()
+print_loaded_embeddings()
 
 
 class UserResponse:
@@ -86,7 +99,8 @@ def submit_url(request):
         return JsonResponse(UserResponse(404, f"Cannot ${request.method} to this path").to_json(), status=404)
 
     # fetch the website from the request
-    url = request.POST.get('url')
+    original_url = request.POST.get('url')
+    url = original_url
     if not url:
         return JsonResponse(UserResponse(400, "Please specify a website.").to_json(), status=400)
 
@@ -95,8 +109,18 @@ def submit_url(request):
     if not valid:
         return JsonResponse(UserResponse(400, "Invalid website.").to_json(), status=400)
 
+    # check if the website has been submitted before, then check if the data is stale
+    try:
+        url = strip_website(url)
+        if url in websites:
+            if not websites[url]['stale']:
+                return JsonResponse(UserResponse(200, "Website submitted successfully.").to_json())
+    except Exception as e:
+        print("Failed to check if the website is stale", e)
+        return JsonResponse(UserResponse(500, "Failed to submit the website.").to_json(), status=500)
+
     # invoke the scraper
-    html_content = fetch_html_from_url(url)
+    html_content = fetch_html_from_url(original_url)
     if not html_content:
         return JsonResponse(UserResponse(
             500,
@@ -110,13 +134,13 @@ def submit_url(request):
         page = BeautifulSoup(html_content, 'html.parser')
         sections = sections_from_page(page)
         strings = tokenize(sections)
-        embeddings = generate_embeddings_and_save(url, strings)
+        _, save_path = generate_embeddings_and_save(url, strings)
     except Exception as e:
         print(e)
         return JsonResponse(UserResponse(500, "Failed to generate embeddings for the website.").to_json(), status=500)
 
-    # store website
-    store_website(strip_website(url), embeddings)
+    # update website store
+    load_previous_embeddings(specific=save_path)
 
     # return success message
     return JsonResponse(UserResponse(200, "Website submitted successfully.").to_json())
@@ -138,8 +162,8 @@ def ask_question(request):
         return JsonResponse(UserResponse(404, f"Cannot ${request.method} to this path").to_json(), status=404)
 
     # fetch the website from the request
-    url = request.POST.get('url')
-    url = strip_website(url)
+    original_url = request.POST.get('url')
+    url = strip_website(original_url)
     if not url:
         return JsonResponse(UserResponse(400, "Please specify a website.").to_json(), status=400)
 
@@ -152,7 +176,7 @@ def ask_question(request):
     try:
         df = websites[url]['embeddings']
     except KeyError:
-        return JsonResponse(UserResponse(400, "Website not found.").to_json(), status=400)
+        return JsonResponse(UserResponse(400, f"({url}) not found. Did you already submit it?").to_json(), status=400)
     except Exception as e:
         print(e)
         return JsonResponse(UserResponse(500, "Failed to fetch the website embeddings.").to_json(), status=500)

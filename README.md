@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ```
 After installing the dependencies, you can run the application using the following command:
 ```bash
-python manage.py runserver
+python manage.py runserver localhost:8000 
 ```
 The application will be accessible at http:// localhost:8000.
 

@@ -1,6 +1,5 @@
-import ast
-import re
 import os
+import re
 from typing import List
 
 import pandas as pd
@@ -114,10 +113,10 @@ def truncated_string(
     """Truncate a string to a maximum number of tokens."""
     encoding = tiktoken.encoding_for_model(model)
     encoded_string = encoding.encode(s)
-    truncated_string = encoding.decode(encoded_string[:max_tokens])
+    truncated_str = encoding.decode(encoded_string[:max_tokens])
     if print_warning and len(encoded_string) > max_tokens:
         print(f"Warning: Truncated string from {len(encoded_string)} tokens to {max_tokens} tokens.")
-    return truncated_string
+    return truncated_str
 
 
 def halved_by_delimiter(s: str, delimiter: str = "\n") -> list[str]:
@@ -197,6 +196,7 @@ def validate_website(site: str) -> bool:
     Validate a website.
     This function should check if the website is valid.
     For now, return True if the website is not empty.
+    TODO: Update this function to validate the website.
     """
     return bool(site)
 
@@ -267,6 +267,60 @@ def tokenize(sections: list[tuple[list[str], str]]) -> List[str]:
     return page_strings
 
 
+def get_iso_datestr():
+    """Return the current date in ISO format."""
+    from datetime import datetime
+    return datetime.now().isoformat()
+
+
+def append_date_to_filename(filename: str):
+    """Append the current date to a filename."""
+    datestr = get_iso_datestr()
+    base, ext = os.path.splitext(filename)
+    return f"{base}__{datestr}{ext}"
+
+
+def strip_date_from_filename(filename: str):
+    """
+    Strip the date from a filename.
+    The date should be in ISO format, separated by '__'.
+    """
+    parts = filename.split("__")
+    if len(parts) > 1:
+        return "__".join(parts[:-1])
+    else:
+        return filename
+
+
+def get_date_str_from_filename(filename: str):
+    """Get the date from a filename."""
+    base, _ = os.path.splitext(filename)
+    datestr = base.split("__")[-1]
+    return datestr
+
+
+def get_date_from_filename(filename: str):
+    """Get the date from a filename."""
+    datestr = get_date_str_from_filename(filename)
+    from datetime import datetime
+    return datetime.fromisoformat(datestr)
+
+
+def is_data_stale(filename: str, days: int = 7):
+    """
+    Check if the data in filename is stale, based on the date in the filename.
+    Returns True if the data is older than (or equal to) days.
+    :param filename: The filename to check. Should have a date in ISO format at the end, separated by '__'.
+    :param days: The number of days after which the data is considered stale. Default is 7 days.
+    """
+    print("Checking if data is stale...", filename)
+    date1 = get_date_from_filename(filename)
+    from datetime import datetime
+    date2 = datetime.now()
+    delta = date2 - date1
+    return delta.days >= days
+
+
 def generate_embeddings_and_save(site: str, strings=None):
     if strings is None:
         strings = []
@@ -277,18 +331,22 @@ def generate_embeddings_and_save(site: str, strings=None):
     os.makedirs(f"embeddings/", exist_ok=True)
 
     # save to CSV
-    save_path = "embeddings/" + strip_website(site) + "_embeddings.csv"
+    save_path = "embeddings/" + strip_website(site) + ".csv"
+
+    # append date to filename
+    save_path = append_date_to_filename(save_path)
+
     df.to_csv(save_path, index=False)
     print(f"Embeddings saved to {save_path}")
 
-    return df
+    return df, save_path
 
 
 # ACTUAL TEXT SEARCH
 def prepare_data(site: str):
     """
     This function reads the embeddings from the file system and returns a dataframe
-    :param site: name of the website, without the .com or .co.ke, and without the www. or https://
+    :param site: name of the website, without the .com or .co.ke, and without the www. Or https://
     :return:
     """
     df = pd.read_csv('../embeddings/' + site + "_embeddings.csv")
