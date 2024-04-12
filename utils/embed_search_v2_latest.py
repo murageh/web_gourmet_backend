@@ -199,19 +199,18 @@ def split_strings_from_subsection(
 
 def validate_website(site: str) -> bool:
     """
-    Validate a website.
-    This function should check if the website is valid.
-    For now, return True if the website is not empty.
-    TODO: Update this function to validate the website.
-    sth like
-    ```python
-        url_pattern = r"^https?://[\w\-\.]+\.[a-z]{2,}$"
-        return bool(re.match(url_pattern, site))
-    ```
-    """
+   Validates a website URL.
+
+   Args:
+       site (str): The website URL to validate.
+
+   Returns:
+       bool: True if the URL is valid, False otherwise.
+   """
     if not site:
         return False
-    return bool(site)
+    url_pattern = r"^https?://[\w\-\.]+\.[a-z]{2,}$"
+    return bool(re.match(url_pattern, site))
 
 
 def strip_website(site: str):
