@@ -209,7 +209,7 @@ def validate_website(site: str) -> bool:
    """
     if not site:
         return False
-    url_pattern = r"^https?://[\w\-\.]+\.[a-z]{2,}$"
+    url_pattern = r"^https?://[\w\-\.]+\.[a-z]{2,}(?:/[^\s]*)*$"
     return bool(re.match(url_pattern, site))
 
 
