@@ -124,7 +124,8 @@ def submit_url(request: HttpRequest) -> JsonResponse:
         strings = tokenize(sections)
         _, save_path = generate_embeddings_and_save(website_url, strings)
     except Exception as e:
-        logger.error(f"Failed to generate embeddings for {website_url}: {e}")
+        logger.info(f"Failed to generate embeddings for {website_url}: {e}")
+        print(f"Failed to generate embeddings for {website_url}: {e}")
         return JsonResponse(UserResponse(500, "Failed to generate embeddings.").to_json(), status=500)
 
     # Update website store and reload embeddings
